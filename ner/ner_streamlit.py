@@ -1,13 +1,17 @@
+from ner.ner_utils import doccano2spacy, random_color, get_ents, AiiNerHttpModel
+from spacy import displacy
+import streamlit as st
+import srsly
+import spacy
+import pandas as pd
 import json
 import sys
+sys.path.insert(0, '../')
 
-import pandas as pd
-import spacy
-import srsly
-import streamlit as st
-from spacy import displacy
 
-from ner.ner_utils import doccano2spacy, random_color
+MODEL_DICT = {
+    'aii_ner_http_model': AiiNerHttpModel
+}
 
 DEFAULT_TEXT = """Donald John Trump (born June 14, 1946) is the 45th and current president of the United States."""
 HTML_WRAPPER = """<div style="overflow-x: auto; border: 1px solid #e6e9ef; border-radius: 0.5rem; padding: 0.5rem; margin-bottom: 0.5rem">{}</div>"""
@@ -21,33 +25,9 @@ def load_model(name):
     except:
         return None
 
-
-@st.cache(allow_output_mutation=True)
-def process_text(model_name, text):
-    nlp = load_model(model_name)
-    return nlp(text)
-
-
-st.sidebar.title("Interactive spaCy visualizer")
-st.sidebar.markdown("""
-Process text with [spaCy](https://spacy.io) models and visualize named entities,
-dependencies and more. Uses spaCy's built-in
-[displaCy](http://spacy.io/usage/visualizers) visualizer under the hood.
-""")
-
-custom_model = None
-if len(sys.argv) > 1:
-    custom_model = sys.argv[1]
-spacy_model = st.sidebar.text_input(
-    "Input one model name or path:", custom_model if custom_model else "en_core_web_sm")
-model_load_state = st.info(f"Loading model '{spacy_model}'...")
-nlp = load_model(spacy_model)
-model_load_state.empty()
-
-
-def spacy_pipeline():
+def spacy_pipeline(nlp):
     text = st.text_area("Text to analyze", DEFAULT_TEXT)
-    doc = process_text(spacy_model, text)
+    doc = nlp(text)
 
     if "parser" in nlp.pipe_names:
         st.header("Dependency Parse & Part-of-speech tags")
@@ -114,8 +94,8 @@ def spacy_pipeline():
         st.code(nlp.meta["vectors"])
         text1 = st.text_input("Text or word 1", "apple")
         text2 = st.text_input("Text or word 2", "orange")
-        doc1 = process_text(spacy_model, text1)
-        doc2 = process_text(spacy_model, text2)
+        doc1 = nlp(text1)
+        doc2 = nlp(text2)
         similarity = doc1.similarity(doc2)
         if similarity > 0.5:
             st.success(similarity)
@@ -155,7 +135,7 @@ def spacy_pipeline():
         st.json(nlp.meta)
 
 
-def ner_plus():
+def ner_plus(nlp):
     def row_2_html(row):
         return displacy.render(row, **SETTINGS).replace("\n\n", "\n")
 
@@ -165,7 +145,10 @@ def ner_plus():
         encoding="utf-8")
 
     st.sidebar.header("Named Entities")
-    label_set = list(nlp.get_pipe("ner").labels)
+    try:
+        label_set = list(nlp.get_pipe("ner").labels)
+    except:
+        label_set = nlp.labels
     labels = st.sidebar.multiselect(
         "Entity labels", label_set, label_set
     )
@@ -193,17 +176,18 @@ def ner_plus():
 
         only_diff = st.sidebar.checkbox("Only Diff")
 
-        st.header(f"{entity_info} ({len(data)})")
+        st.header(f"{entity_info}")
 
         predict_data = []
 
         for eg in data:
             ents = eg.get("entities", doccano2spacy(eg.get("labels", [])))
+            ents = sorted(ents,key=lambda x:x.get('start'))
             original_ents = [ent for ent in ents if ent['label'] in labels]
 
-            doc = nlp(eg["text"])
-            doc_json = doc.to_json()
-            predict_ents = [ent for ent in doc_json['ents']
+            ents = get_ents(nlp, eg["text"])
+            ents = sorted(ents,key=lambda x:x.get('start'))
+            predict_ents = [ent for ent in ents
                             if ent['label'] in labels]
             if not (only_diff and original_ents == predict_ents):
                 predict_data.append({
@@ -256,16 +240,68 @@ def ner_plus():
 # page router
 
 
-usage = st.sidebar.selectbox("Usage", ['spacy_pipeline', 'ner_plus'])
+nlp = None
+
+
+def load_spacy(nlp):
+    st.sidebar.title("Interactive spaCy visualizer")
+    st.sidebar.markdown("""
+    Process text with [spaCy](https://spacy.io) models and visualize named entities,
+    dependencies and more. Uses spaCy's built-in
+    [displaCy](http://spacy.io/usage/visualizers) visualizer under the hood.
+    """)
+
+    custom_model = None
+    if len(sys.argv) > 1:
+        custom_model = sys.argv[1]
+    spacy_mdoel = st.sidebar.text_input(
+        "Input spacy model name or path:", custom_model if custom_model else "en_core_web_sm")
+    model_load_state = st.info(f"Loading model '{spacy_mdoel}'...")
+    nlp = load_model(spacy_mdoel)
+    model_load_state.empty()
+    return nlp
+
+
+def load_http(nlp):
+    st.sidebar.title("Interactive NER visualizer")
+    st.sidebar.markdown("""
+    Process text with Your http models and visualize named entities. Uses spaCy's built-in
+    [displaCy](http://spacy.io/usage/visualizers) visualizer under the hood.
+    """)
+    model_class = st.sidebar.selectbox("Select one Model Class", [
+                                       k for k, v in MODEL_DICT.items()])
+    custom_model = None
+    if len(sys.argv) > 1:
+        custom_model = sys.argv[1]
+    model_url = st.sidebar.text_input(
+        "Input model http url", custom_model if custom_model else "http://localhost:8000/ner")
+    nlp = MODEL_DICT[model_class](model_url)
+    return nlp
+
+
+model_type = st.sidebar.selectbox("Model Type", ['spacy', 'http'])
+
+if model_type == 'spacy':
+    nlp = load_spacy(nlp)
+    usage_options = ['spacy_pipeline', 'ner_plus']
+elif model_type == 'http':
+    nlp = load_http(nlp)
+    usage_options = ['ner_plus']
+else:
+    st.markdown("""
+        # You need Select one Model Type
+        """)
+
+usage = st.sidebar.selectbox("Usage", usage_options)
 
 if nlp is not None:
     if usage == 'spacy_pipeline':
-        spacy_pipeline()
+        spacy_pipeline(nlp)
     elif usage == 'ner_plus':
-        ner_plus()
+        ner_plus(nlp)
     else:
         st.markdown("""
-        # You need choice an Usage
+        # You need Select one Usage
         """)
 else:
     st.info("Please input a valid model name or path")
