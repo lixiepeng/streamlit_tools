@@ -176,7 +176,8 @@ def ner_plus(nlp):
                     for line in lines if line.strip()]
 
         only_diff = st.sidebar.checkbox("Only Diff")
-        show_displacy = st.sidebar.checkbox("Show Displacy")
+        from_text_input = True if input_texts else False
+        show_displacy = st.sidebar.checkbox("Show Displacy",value=from_text_input)
 
         st.header(f"NER Info")
         if show_displacy:
@@ -260,39 +261,40 @@ def ner_plus(nlp):
             | Examples with no entities | {n_no_ents:,} |
             """
             )
+            # st.sidebar.subheader("Predict data")
+            # st.sidebar.json(predict_data)
 
-        st.subheader("Metrics Report:")
-        metrics_report = get_metrics_report(y_true, y_pred)
-        for k,v in metrics_report.items():
-            st.subheader(k)
-            st.code(v)
+        if not from_text_input:
+            st.subheader("Metrics Report:")
+            metrics_report = get_metrics_report(y_true, y_pred)
+            for k,v in metrics_report.items():
+                st.subheader(k)
+                st.code(v)
 
-        st.subheader("NER Diff:")
-        # def list_flat(l,sep=' '):
-        #     l_ = []
-        #     for x in l:
-        #         l_.extend(l)
-        #         l_.append(sep)
-        # st.sidebar.dataframe(pd.DataFrame({
-        #     'token': list_flat(x_text),
-        #     'true': list_flat(y_true),
-        #     'pred': list_flat(y_pred)
-        # }))
-        ner_diff = ''
-        sep = '\t'
-        for x, y, z in zip(x_text, y_true, y_pred):
-            for token, true_label, pred_label in zip(x, y, z):
-                ner_diff += token + sep
-                if true_label != pred_label:
-                    ner_diff += '*' + true_label + '*' + sep + '*' + pred_label + '*'
-                else:
-                    ner_diff += true_label + sep + pred_label
+            st.subheader("NER Diff:")
+            # def list_flat(l,sep=' '):
+            #     l_ = []
+            #     for x in l:
+            #         l_.extend(l)
+            #         l_.append(sep)
+            # st.sidebar.dataframe(pd.DataFrame({
+            #     'token': list_flat(x_text),
+            #     'true': list_flat(y_true),
+            #     'pred': list_flat(y_pred)
+            # }))
+            ner_diff = ''
+            sep = '\t'
+            for x, y, z in zip(x_text, y_true, y_pred):
+                for token, true_label, pred_label in zip(x, y, z):
+                    ner_diff += token + sep
+                    if true_label != pred_label:
+                        ner_diff += '*' + true_label + '*' + sep + '*' + pred_label + '*'
+                    else:
+                        ner_diff += true_label + sep + pred_label
+                    ner_diff += '\n'
                 ner_diff += '\n'
-            ner_diff += '\n'
-        st.code(ner_diff)
+            st.code(ner_diff)
 
-        # st.sidebar.subheader("Predict data")
-        # st.sidebar.json(predict_data)
 
 # page router
 
