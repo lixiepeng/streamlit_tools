@@ -6,9 +6,10 @@ import spacy
 import srsly
 import streamlit as st
 from spacy import displacy
+from spacy.language import Language
 
-from ner.ner_utils import (AiiNerHttpModel, doccano2spacy, get_ents,
-                           random_color, get_metrics_report, span2seq)
+from ner.ner_utils import (AiiNerHttpModel, doccano2spacy, get_metrics_report,
+                           random_color, span2seq)
 
 sys.path.insert(0, '../')
 
@@ -28,6 +29,17 @@ def load_model(name):
         return spacy.load(name)
     except:
         return None
+
+
+@st.cache(allow_output_mutation=True, suppress_st_warning=True)
+def get_ents(model_func, text):
+    if isinstance(model_func, Language):
+        doc = model_func(text)
+        doc_json = doc.to_json()
+        ents = doc_json['ents']
+    else:
+        ents = model_func(text)
+    return ents
 
 
 def spacy_pipeline(nlp):
@@ -167,6 +179,8 @@ def ner_plus(nlp):
     })
 
     if uploaded_file or input_texts:
+        if uploaded_file:
+            input_texts = None
         lines = (uploaded_file.readlines() if uploaded_file else None) or \
             [line for line in input_texts.split('\n') if line]
         try:
@@ -177,7 +191,8 @@ def ner_plus(nlp):
 
         only_diff = st.sidebar.checkbox("Only Diff")
         from_text_input = True if input_texts else False
-        show_displacy = st.sidebar.checkbox("Show Displacy",value=from_text_input)
+        show_displacy = st.sidebar.checkbox(
+            "Show Displacy", value=from_text_input)
 
         st.header(f"NER Info")
         if show_displacy:
@@ -230,7 +245,8 @@ def ner_plus(nlp):
                         count_dict['n_no_ents'] += 1
                     count_dict['n_predict_ents'] += len(row["ents"])
                     html = row_2_html(row)
-                    st.markdown(HTML_WRAPPER.format(html), unsafe_allow_html=True)
+                    st.markdown(HTML_WRAPPER.format(
+                        html), unsafe_allow_html=True)
                 else:
                     count_dict['n_diff'] += 1
                     # original
@@ -267,7 +283,7 @@ def ner_plus(nlp):
         if not from_text_input:
             st.subheader("Metrics Report:")
             metrics_report = get_metrics_report(y_true, y_pred)
-            for k,v in metrics_report.items():
+            for k, v in metrics_report.items():
                 st.subheader(k)
                 st.code(v)
 

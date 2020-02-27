@@ -5,7 +5,6 @@ import numpy as np
 import requests
 from seqeval.metrics import accuracy_score
 from seqeval.metrics import classification_report as sequence_report
-from spacy.language import Language
 
 from nested_dict import nested_dict
 
@@ -102,18 +101,8 @@ def doccano2spacy(doccano):
     return [{
         "start": ent[0],
         "end":ent[1],
-        "label":ent[2]
+        "label":ent[2].upper()
     } for ent in doccano]
-
-
-def get_ents(model_func, text):
-    if isinstance(model_func, Language):
-        doc = model_func(text)
-        doc_json = doc.to_json()
-        ents = doc_json['ents']
-    else:
-        ents = model_func(text)
-    return ents
 
 
 class NlpModel:
