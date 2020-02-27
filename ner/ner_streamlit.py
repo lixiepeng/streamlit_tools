@@ -1,5 +1,6 @@
 import json
 import sys
+from copy import deepcopy
 
 import pandas as pd
 import spacy
@@ -8,10 +9,8 @@ import streamlit as st
 from spacy import displacy
 from spacy.language import Language
 
-from ner.ner_utils import (AiiNerHttpModel, doccano2spacy, get_metrics_report,
-                           random_color, span2seq)
-
-sys.path.insert(0, '../')
+from ner_utils import (NlpModel, AiiNerHttpModel, doccano2spacy, get_metrics_report,
+                       random_color, span2seq)
 
 
 MODEL_DICT = {
@@ -31,7 +30,8 @@ def load_model(name):
         return None
 
 
-@st.cache(allow_output_mutation=True, suppress_st_warning=True)
+@st.cache(allow_output_mutation=True,
+          show_spinner=False)
 def get_ents(model_func, text):
     if isinstance(model_func, Language):
         doc = model_func(text)
@@ -156,11 +156,16 @@ def ner_plus(nlp):
     def row_2_html(row):
         return displacy.render(row, **SETTINGS).replace("\n\n", "\n")
 
-    uploaded_file = st.file_uploader(
-        "Upload documents in [annotated] jsonl(spacy|doccano) or raw line txt:",
-        type=["jsonl", "txt"],
-        encoding="utf-8")
-    input_texts = st.text_area("Or input some text here:")
+    from_file = st.checkbox('Input From File?')
+    if from_file:
+        input_texts = None
+        uploaded_file = st.file_uploader(
+            "Upload documents in [annotated] jsonl(spacy|doccano) or raw line txt:",
+            type=["jsonl", "txt"],
+            encoding="utf-8")
+    else:
+        uploaded_file = None
+        input_texts = st.text_area("Or input some text here:")
 
     st.sidebar.subheader("Named Entities")
     try:
@@ -179,8 +184,6 @@ def ner_plus(nlp):
     })
 
     if uploaded_file or input_texts:
-        if uploaded_file:
-            input_texts = None
         lines = (uploaded_file.readlines() if uploaded_file else None) or \
             [line for line in input_texts.split('\n') if line]
         try:
@@ -189,11 +192,10 @@ def ner_plus(nlp):
             data = [{"text": line.strip()}
                     for line in lines if line.strip()]
 
-        only_diff = st.sidebar.checkbox("Only Diff")
-        # TO DO input model exchange
+        only_diff = st.sidebar.checkbox("Only Diff?")
         from_text_input = True if input_texts else False
         show_displacy = st.sidebar.checkbox(
-            "Show Displacy", value=from_text_input)
+            "Show Displacy?", value=from_text_input)
 
         st.header(f"NER Info")
         if show_displacy:
@@ -221,8 +223,8 @@ def ner_plus(nlp):
                 "entities": original_ents
             }))
 
-            ents = get_ents(nlp, eg["text"])
-            ents = sorted(ents, key=lambda x: x.get('start'))
+            copyed_cached_ents = deepcopy(get_ents(nlp, eg["text"]))
+            ents = sorted(copyed_cached_ents, key=lambda x: x.get('start'))
             predict_ents = [ent for ent in ents
                             if ent['label'] in labels]
             y_pred.append(span2seq({
@@ -355,12 +357,12 @@ def load_http(nlp):
     return nlp
 
 
-model_type = st.sidebar.selectbox("Model Type", ['spacy', 'http'])
+model_type = st.sidebar.selectbox("Model Type", ['SpaCy', 'HTTP'])
 
-if model_type == 'spacy':
+if model_type == 'SpaCy':
     nlp = load_spacy(nlp)
     usage_options = ['spacy_pipeline', 'ner_plus']
-elif model_type == 'http':
+elif model_type == 'HTTP':
     nlp = load_http(nlp)
     usage_options = ['ner_plus']
 else:
