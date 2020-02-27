@@ -1,11 +1,15 @@
-from ner.ner_utils import doccano2spacy, random_color, get_ents, AiiNerHttpModel
-from spacy import displacy
-import streamlit as st
-import srsly
-import spacy
-import pandas as pd
 import json
 import sys
+
+import pandas as pd
+import spacy
+import srsly
+import streamlit as st
+from spacy import displacy
+
+from ner.ner_utils import (AiiNerHttpModel, doccano2spacy, get_ents,
+                           random_color, get_metrics_report, span2seq)
+
 sys.path.insert(0, '../')
 
 
@@ -24,6 +28,7 @@ def load_model(name):
         return spacy.load(name)
     except:
         return None
+
 
 def spacy_pipeline(nlp):
     text = st.text_area("Text to analyze", DEFAULT_TEXT)
@@ -140,11 +145,12 @@ def ner_plus(nlp):
         return displacy.render(row, **SETTINGS).replace("\n\n", "\n")
 
     uploaded_file = st.file_uploader(
-        "Upload documents in annotated jsonl(spacy|doccano) or raw txt:",
+        "Upload documents in [annotated] jsonl(spacy|doccano) or raw line txt:",
         type=["jsonl", "txt"],
         encoding="utf-8")
+    input_texts = st.text_area("Or input some text here:")
 
-    st.sidebar.header("Named Entities")
+    st.sidebar.subheader("Named Entities")
     try:
         label_set = list(nlp.get_pipe("ner").labels)
     except:
@@ -159,83 +165,134 @@ def ner_plus(nlp):
             'ents': labels
         }
     })
-    entity_info = 'Entities Info'
-    if uploaded_file is not None:
-        lines = uploaded_file.readlines()
+
+    if uploaded_file or input_texts:
+        lines = (uploaded_file.readlines() if uploaded_file else None) or \
+            [line for line in input_texts.split('\n') if line]
         try:
             data = [json.loads(line) for line in lines]
         except:
             data = [{"text": line.strip()}
                     for line in lines if line.strip()]
-        count_dict = {
-            "n_no_ents": 0,
-            "n_total_ents": 0,
-            "n_predict_ents": 0,
-            "n_diff": 0
-        }
 
         only_diff = st.sidebar.checkbox("Only Diff")
+        show_displacy = st.sidebar.checkbox("Show Displacy")
 
-        st.header(f"{entity_info}")
+        st.header(f"NER Info")
+        if show_displacy:
+            st.subheader(f"NER Displacy")
+            count_dict = {
+                "n_no_ents": 0,
+                "n_total_ents": 0,
+                "n_predict_ents": 0,
+                "n_diff": 0
+            }
+            predict_data = []
 
-        predict_data = []
+        x_text = []
+        y_true = []
+        y_pred = []
 
         for eg in data:
+            x_text.append(eg["text"])
+
             ents = eg.get("entities", doccano2spacy(eg.get("labels", [])))
-            ents = sorted(ents,key=lambda x:x.get('start'))
+            ents = sorted(ents, key=lambda x: x.get('start'))
             original_ents = [ent for ent in ents if ent['label'] in labels]
+            y_true.append(span2seq({
+                "text": eg["text"],
+                "entities": original_ents
+            }))
 
             ents = get_ents(nlp, eg["text"])
-            ents = sorted(ents,key=lambda x:x.get('start'))
+            ents = sorted(ents, key=lambda x: x.get('start'))
             predict_ents = [ent for ent in ents
                             if ent['label'] in labels]
-            if not (only_diff and original_ents == predict_ents):
-                predict_data.append({
-                    "meta": eg.get("meta", {}),
-                    "text": eg["text"],
-                    "entities": predict_ents
-                })
-            if original_ents == predict_ents:
-                if only_diff or (not select_all and not original_ents):
-                    continue
-                row = {"text": eg["text"], "ents": original_ents}
-                count_dict['n_total_ents'] += len(row["ents"])
-                if not row["ents"]:
-                    count_dict['n_no_ents'] += 1
-                count_dict['n_predict_ents'] += len(row["ents"])
-                html = row_2_html(row)
-                st.markdown(HTML_WRAPPER.format(html), unsafe_allow_html=True)
-            else:
-                count_dict['n_diff'] += 1
-                # original
-                row = {"text": eg["text"], "ents": original_ents}
-                count_dict['n_total_ents'] += len(row["ents"])
-                if not row["ents"]:
-                    count_dict['n_no_ents'] += 1
-                original_html = row_2_html(row)
-                # predict
-                row = {"text": eg["text"], "ents": predict_ents}
-                count_dict['n_predict_ents'] += len(row["ents"])
-                predict_html = row_2_html(row)
-                st.markdown(HTML_WRAPPER.format('original: \n'+original_html+'\npredict:\n' +
-                                                predict_html), unsafe_allow_html=True)
-        n_no_ents = count_dict['n_no_ents']
-        n_total_ents = count_dict['n_total_ents']
-        n_predict_ents = count_dict['n_predict_ents']
-        n_diff = count_dict['n_diff']
-        st.sidebar.markdown(
-            f"""
-        | `{entity_info}` | |
-        | --- | ---: |
-        | Total examples | {len(data):,} |
-        | Total entities | {n_total_ents:,} |
-        | Total predict entities | {n_predict_ents:,} |
-        | Examples with diff | {n_diff:,} |
-        | Examples with no entities | {n_no_ents:,} |
-        """
-        )
-        st.sidebar.header("Predict data")
-        st.sidebar.json(predict_data)
+            y_pred.append(span2seq({
+                "text": eg["text"],
+                "entities": predict_ents
+            }))
+
+            if show_displacy:
+                if not (only_diff and original_ents == predict_ents):
+                    predict_data.append({
+                        "meta": eg.get("meta", {}),
+                        "text": eg["text"],
+                        "entities": predict_ents
+                    })
+                if original_ents == predict_ents:
+                    if only_diff or (not select_all and not original_ents):
+                        continue
+                    row = {"text": eg["text"], "ents": original_ents}
+                    count_dict['n_total_ents'] += len(row["ents"])
+                    if not row["ents"]:
+                        count_dict['n_no_ents'] += 1
+                    count_dict['n_predict_ents'] += len(row["ents"])
+                    html = row_2_html(row)
+                    st.markdown(HTML_WRAPPER.format(html), unsafe_allow_html=True)
+                else:
+                    count_dict['n_diff'] += 1
+                    # original
+                    row = {"text": eg["text"], "ents": original_ents}
+                    count_dict['n_total_ents'] += len(row["ents"])
+                    if not row["ents"]:
+                        count_dict['n_no_ents'] += 1
+                    original_html = row_2_html(row)
+                    # predict
+                    row = {"text": eg["text"], "ents": predict_ents}
+                    count_dict['n_predict_ents'] += len(row["ents"])
+                    predict_html = row_2_html(row)
+                    st.markdown(HTML_WRAPPER.format('original: \n'+original_html+'\npredict:\n' +
+                                                    predict_html), unsafe_allow_html=True)
+        if show_displacy:
+            n_no_ents = count_dict['n_no_ents']
+            n_total_ents = count_dict['n_total_ents']
+            n_predict_ents = count_dict['n_predict_ents']
+            n_diff = count_dict['n_diff']
+            st.sidebar.markdown(
+                f"""
+            | `Entities Info` | |
+            | --- | ---: |
+            | Total examples | {len(data):,} |
+            | Total entities | {n_total_ents:,} |
+            | Total predict entities | {n_predict_ents:,} |
+            | Examples with diff | {n_diff:,} |
+            | Examples with no entities | {n_no_ents:,} |
+            """
+            )
+
+        st.subheader("Metrics Report:")
+        metrics_report = get_metrics_report(y_true, y_pred)
+        for k,v in metrics_report.items():
+            st.subheader(k)
+            st.code(v)
+
+        st.subheader("NER Diff:")
+        # def list_flat(l,sep=' '):
+        #     l_ = []
+        #     for x in l:
+        #         l_.extend(l)
+        #         l_.append(sep)
+        # st.sidebar.dataframe(pd.DataFrame({
+        #     'token': list_flat(x_text),
+        #     'true': list_flat(y_true),
+        #     'pred': list_flat(y_pred)
+        # }))
+        ner_diff = ''
+        sep = '\t'
+        for x, y, z in zip(x_text, y_true, y_pred):
+            for token, true_label, pred_label in zip(x, y, z):
+                ner_diff += token + sep
+                if true_label != pred_label:
+                    ner_diff += '*' + true_label + '*' + sep + '*' + pred_label + '*'
+                else:
+                    ner_diff += true_label + sep + pred_label
+                ner_diff += '\n'
+            ner_diff += '\n'
+        st.code(ner_diff)
+
+        # st.sidebar.subheader("Predict data")
+        # st.sidebar.json(predict_data)
 
 # page router
 
@@ -269,7 +326,7 @@ def load_http(nlp):
     [displaCy](http://spacy.io/usage/visualizers) visualizer under the hood.
     """)
     model_class = st.sidebar.selectbox("Select one Model Class", [
-                                       k for k, v in MODEL_DICT.items()])
+        k for k, v in MODEL_DICT.items()])
     custom_model = None
     if len(sys.argv) > 1:
         custom_model = sys.argv[1]
