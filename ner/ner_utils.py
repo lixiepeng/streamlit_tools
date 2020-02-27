@@ -3,10 +3,10 @@ import random
 
 import numpy as np
 import requests
+from nested_dict import nested_dict
 from seqeval.metrics import accuracy_score
 from seqeval.metrics import classification_report as sequence_report
 
-from nested_dict import nested_dict
 
 def span2seq(ner_span):
     tags = ['O']*len(ner_span['text'])
@@ -127,7 +127,7 @@ class AiiNerHttpModel(AiiNerModel):
 
     def __init__(self, url):
         super().__init__()
-        self.url = url
+        self.url = url if url != "http://localhost:port/api" else "http://localhost:51785/ner_cv_aii"
         self.headers = {"content-type": "application/json"}
         self.session = requests.Session()
         self.labels = ["SCHOOL", "DEGREE", "MAJOR", "CERTIFICATE",
@@ -141,6 +141,44 @@ class AiiNerHttpModel(AiiNerModel):
             res_data = json.loads(response.text)
             ents = [{'start': ent['boundary'][0], 'end':ent['boundary'][1],
                      'label':ent['type'].upper()} for ent in res_data['result'][0]['entities']]
+            return ents
+        else:
+            print(response)
+            return None
+
+
+class AiiNerRuleHttpModel(AiiNerHttpModel):
+
+    def __init__(self, url):
+        self.url = url if url != "http://localhost:port/api" else "http://localhost:51655/ner"
+        super().__init__(self.url)
+
+    def __call__(self, text):
+        data = {
+            "header": {
+                "log_id": "0x666",
+                "user_ip": "192.168.8.52",
+                "provider": "algo_survey",
+                "product_name": "algo_survey",
+                "uid": "0x666"
+            },
+            "request": {
+                "c": "tagging",
+                "m": "ner",
+                "p": {
+                    "user_id": 1001,
+                    "query_body": {
+                        "text_list": [text]
+                    }
+                }
+            }
+        }
+        response = self.session.post(
+            self.url, data=json.dumps(data), headers=self.headers)
+        if response.status_code == 200:
+            res_data = json.loads(response.text)
+            ents = [{'start': ent['boundary'][0], 'end':ent['boundary'][1],
+                     'label':ent['type'].upper()} for ent in res_data['response']['results'][0]]
             return ents
         else:
             print(response)

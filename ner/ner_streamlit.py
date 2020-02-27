@@ -9,12 +9,13 @@ import streamlit as st
 from spacy import displacy
 from spacy.language import Language
 
-from ner_utils import (NlpModel, AiiNerHttpModel, doccano2spacy, get_metrics_report,
+from ner_utils import (NlpModel, AiiNerHttpModel,AiiNerRuleHttpModel, doccano2spacy, get_metrics_report,
                        random_color, span2seq)
 
 
 MODEL_DICT = {
-    'aii_ner_http_model': AiiNerHttpModel
+    'AiiNerHttpModel': AiiNerHttpModel,
+    'AiiNerRuleHttpModel':AiiNerRuleHttpModel
 }
 
 DEFAULT_TEXT = """Donald John Trump (born June 14, 1946) is the 45th and current president of the United States."""
@@ -41,6 +42,9 @@ def get_ents(model_func, text):
         ents = model_func(text)
     return ents
 
+@st.cache(allow_output_mutation=True)
+def pipe_ents(model_func, docs):
+    pass
 
 def spacy_pipeline(nlp):
     text = st.text_area("Text to analyze", DEFAULT_TEXT)
@@ -352,8 +356,10 @@ def load_http(nlp):
     if len(sys.argv) > 1:
         custom_model = sys.argv[1]
     model_url = st.sidebar.text_input(
-        "Input model http url", custom_model if custom_model else "http://localhost:8000/ner")
+        "Input model http url", custom_model if custom_model else "http://localhost:port/api")
     nlp = MODEL_DICT[model_class](model_url)
+    st.info("Using default URL: "+nlp.url)
+    model_url = nlp.url
     return nlp
 
 
