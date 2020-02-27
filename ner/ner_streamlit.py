@@ -190,6 +190,7 @@ def ner_plus(nlp):
                     for line in lines if line.strip()]
 
         only_diff = st.sidebar.checkbox("Only Diff")
+        # TO DO input model exchange
         from_text_input = True if input_texts else False
         show_displacy = st.sidebar.checkbox(
             "Show Displacy", value=from_text_input)
