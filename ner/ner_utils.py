@@ -8,6 +8,15 @@ from seqeval.metrics import accuracy_score
 from seqeval.metrics import classification_report as sequence_report
 
 
+def generalize_label(y_true, y_pred, confuse_map={}):
+    y_true = str(y_true)
+    y_pred = str(y_pred)
+    for k, v in confuse_map.items():
+        y_true = y_true.replace(k, v)
+        y_pred = y_pred.replace(k, v)
+    return eval(y_true), eval(y_pred)
+
+
 def span2seq(ner_span):
     tags = ['O']*len(ner_span['text'])
     for span in ner_span.get('entities', ner_span.get('spans', [])):
@@ -82,11 +91,22 @@ def produce_report(label_dict, digits=4):
 
 
 def get_metrics_report(y_true, y_pred, digits=4):
-    return {
+    report_dict = {
         "acc": '{:2.4f}'.format(accuracy_score(y_true, y_pred)),
         "label_based": produce_report(confusion_metrics(y_true, y_pred)),
         "entity_based": sequence_report(y_true, y_pred, digits=4)
     }
+    y_true, y_pred = generalize_label(y_true, y_pred, confuse_map={
+        'FUNCTION': 'FUN-ISY-SKL',
+        'SKILL': 'FUN-ISY-SKL',
+        'INDUSTRY': 'FUN-ISY-SKL'
+    })
+    report_dict.update({
+        "confused_acc": '{:2.4f}'.format(accuracy_score(y_true, y_pred)),
+        "confused_label_based": produce_report(confusion_metrics(y_true, y_pred)),
+        "confused_entity_based": sequence_report(y_true, y_pred, digits=4)
+    })
+    return report_dict
 
 
 def random_color(light=True):
