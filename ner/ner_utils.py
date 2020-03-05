@@ -93,18 +93,18 @@ def produce_report(label_dict, digits=4):
 def get_metrics_report(y_true, y_pred, digits=4):
     report_dict = {
         "acc": '{:2.4f}'.format(accuracy_score(y_true, y_pred)),
-        "label_based": produce_report(confusion_metrics(y_true, y_pred)),
-        "entity_based": sequence_report(y_true, y_pred, digits=4)
+        "token_based": produce_report(confusion_metrics(y_true, y_pred)),
+        "span_based": sequence_report(y_true, y_pred, digits=4)
     }
     y_true, y_pred = generalize_label(y_true, y_pred, confuse_map={
-        'FUNCTION': 'FUN-ISY-SKL',
-        'SKILL': 'FUN-ISY-SKL',
-        'INDUSTRY': 'FUN-ISY-SKL'
+        'FUNCTION': 'FUN_ISY_SKL',
+        'SKILL': 'FUN_ISY_SKL',
+        'INDUSTRY': 'FUN_ISY_SKL'
     })
     report_dict.update({
         "confused_acc": '{:2.4f}'.format(accuracy_score(y_true, y_pred)),
-        "confused_label_based": produce_report(confusion_metrics(y_true, y_pred)),
-        "confused_entity_based": sequence_report(y_true, y_pred, digits=4)
+        "confused_token_based": produce_report(confusion_metrics(y_true, y_pred)),
+        "confused_span_based": sequence_report(y_true, y_pred, digits=4)
     })
     return report_dict
 
