@@ -1,11 +1,65 @@
 import json
 import random
+import re
 
 import numpy as np
+import pandas as pd
 import requests
 from nested_dict import nested_dict
 from seqeval.metrics import accuracy_score
 from seqeval.metrics import classification_report as sequence_report
+from sklearn.metrics import confusion_matrix
+
+
+def diff_pred_gold_ner(nlp, docs_golds, output):
+    '''
+    print FP/FN
+    '''
+    diff = []
+
+    def pretty_spacy_ner_tuple(doc, spacy_ner_tuples):
+        res = []
+        for ent in spacy_ner_tuples:
+            res.append((doc[ent[0]:ent[1]], ent[0], ent[1], ent[2]))
+        return res
+
+    def doc2spacy_ner_tuple(doc):
+        res = []
+        for ent in doc.ents:
+            res.append((ent.start_char, ent.end_char, ent.label_))
+        return res
+    for doc, gold in docs_golds:
+        doc_pred = nlp(doc) if isinstance(doc, str) else doc
+        ner_pred = {
+            'predictions': pretty_spacy_ner_tuple(doc, doc2spacy_ner_tuple(doc_pred))
+        }
+        gold_entities = pretty_spacy_ner_tuple(doc, gold['entities'])
+        for k, v in doc_pred.user_hooks.items():
+            if k.endswith('matcher'):
+                ner_pred.update({
+                    k: doc_pred.user_hooks[k]
+                })
+        if gold_entities != ner_pred['predictions']:
+            diff_ = {
+                'type': 'FP' if not gold_entities else 'FN',
+                'text': doc,
+                'entities': gold_entities,
+            }
+            diff_.update(ner_pred)
+            diff.append(diff_)
+        elif gold_entities:
+            diff_ = {
+                'type': 'TP',
+                'text': doc,
+                'entities': gold_entities,
+            }
+            diff_.update(ner_pred)
+            diff.append(diff_)
+        else:
+            pass
+    with open(output, 'w', encoding='utf-8') as fw:
+        for diff_ in diff:
+            fw.write(json.dumps(diff_, ensure_ascii=False)+'\n')
 
 
 def generalize_label(y_true, y_pred, confuse_map={}):
@@ -90,7 +144,43 @@ def produce_report(label_dict, digits=4):
     return report
 
 
+def flat_list(l):
+    l_ = []
+    for x in l:
+        l_.extend(x)
+    return l_
+
+def align_label_sequence(y_true,y_pred):
+    '''
+    >>> y_true = ['O', 'B-LOC', 'I-LOC', 'O', 'O', 'O', 'O']
+    >>> y_pred = ['O', 'O', 'O', 'O', 'B-PER', 'I-PER', 'O']
+    >>> align_label_sequence(y_true,y_pred)
+    (['O', 'LOC', 'O', 'O', 'O'],['O', 'O', 'O', 'PER' 'O'])
+    '''
+    i,j= 0,0
+    y_true_,y_pred_ = [],[]
+    while i<len(y_true):
+        if y_true[i].startswith('B'):
+            tmp_label = y_true[i].split('-')[1]
+            span_start = i
+            while not y_true[i] in ['B','O']:
+                i += 1
+                j += 1
+            y_true_.append(tmp_label)
+            y_pred_.append()
+        elif y_pred[j].startswith('B'):
+
+def get_confusion_matrix(y_true, y_pred):
+    flat_y_true = flat_list(y_true)
+    flat_y_pred = flat_list(y_pred)
+    labels = list(set(flat_y_true) | set(flat_y_pred))
+    labels.sort()
+    cm = confusion_matrix(flat_y_true, flat_y_pred, labels=list(labels))
+    return pd.DataFrame(cm, index=labels, columns=labels)
+
+
 def get_metrics_report(y_true, y_pred, digits=4):
+
     report_dict = {
         "acc": '{:2.4f}'.format(accuracy_score(y_true, y_pred)),
         "token_based": produce_report(confusion_metrics(y_true, y_pred)),
@@ -123,6 +213,63 @@ def doccano2spacy(doccano):
         "end":ent[1],
         "label":ent[2].upper()
     } for ent in doccano]
+
+
+def spacy2yedda(spacy):
+    '''
+    >>> ner = {'text': '我叫朱慈祥，今年54岁了，家住龙游县湖镇镇周家村墩头自然村，我在司炉工岗位工作已经十几年了。',
+         'entities': [{'start': 32, 'end': 35, 'label': 'FUNCTION'}]}
+    >>> spacy2yedda(ner)
+    '我叫朱慈祥，今年54岁了，家住龙游县湖镇镇周家村墩头自然村，我在[@司炉工#FUNCTION*]岗位工作已经十几年了。'
+    '''
+    tokens = list(spacy['text'])
+    for ent in sorted(spacy['entities'],
+                      key=lambda x: x.get('start'),
+                      reverse=True):
+        tokens[ent['start']:ent['end']] = list('[@') + \
+            tokens[ent['start']:ent['end']] + \
+            list('#') + \
+            list(ent['label']) + \
+            list('*]')
+    return ''.join(tokens)
+
+
+def yedda2spacy(yedda):
+    '''
+    >>> text = '我叫朱慈祥，今年54岁了，家住龙游县湖镇镇周家村墩头自然村，我在[@司炉工#FUNCTION*]岗位工作已经十几年了。'
+    >>> yedda2spacy(text)
+    {'text': '我叫朱慈祥，今年54岁了，家住龙游县湖镇镇周家村墩头自然村，我在司炉工岗位工作已经十几年了。',
+     'entities': [{'start': 32, 'end': 35, 'label': 'FUNCTION'}]}
+    '''
+    entities = []
+    raw_text = re.sub(r'\[[\@\$](.*?)\#.*?\*\](?!\#)', r'\1', yedda)
+    i, j = 0, 0
+    while i < len(raw_text):
+        if raw_text[i] == yedda[j]:
+            i += 1
+            j += 1
+        else:
+            if yedda[j] == '[' and yedda[j+1] in ['@', '$']:
+                span_start = i
+                span_type = yedda[j+1]
+                j += 2
+                while raw_text[i] == yedda[j]:
+                    i += 1
+                    j += 1
+                label_start = j+1
+                while yedda[j] != '*' and yedda[j+1] != ']':
+                    j += 1
+                tmp_label = ''.join(yedda[label_start:j])
+                entities.append({
+                    'start': span_start,
+                    'end': i,
+                    'label': tmp_label.upper()
+                })
+                j += 2
+    return {
+        'text': raw_text,
+        'entities': entities
+    }
 
 
 class NlpModel:
@@ -203,3 +350,38 @@ class AiiNerRuleHttpModel(AiiNerHttpModel):
         else:
             print(response)
             return None
+
+
+def test_recommend():
+    '''
+    use history annotated entity dict to annotate future raw text
+    '''
+    from recommend import maximum_matching
+    spacy_ner = {
+        "text": "尊敬的公司领导，你们好，我是胡爱辉，龙游等中共党员，今年37周岁，我的性格活泼开朗，善于与人沟通，而且爱好广泛，喜欢唱歌，追求新事物，现在在浙江顺康金属制品有限公司做电工，我做事比较认真负责，受到同事与上司的认可线，现在应聘贵公司高压电工或网格多功能工。",
+        "entities": [{
+                "start": 83,
+                "end": 85,
+                "label": "FUNCTION"
+        }, {
+            "start": 70,
+            "end": 82,
+            "label": "COMPANY"
+        }, {
+            "start": 115,
+            "end": 119,
+            "label": "FUNCTION"
+        }, {
+            "start": 120,
+            "end": 126,
+            "label": "FUNCTION"
+        }]
+    }
+    raw_text = '我在浙江顺康金属制品有限公司做电工，想应聘贵公司的高压电工或网格多功能工。'
+    yedda = spacy2yedda(spacy_ner)
+    print('raw: '+raw_text)
+    print('anno: '+maximum_matching(yedda, raw_text))
+
+
+if __name__ == '__main__':
+    test_recommend()

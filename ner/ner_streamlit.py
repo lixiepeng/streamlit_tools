@@ -9,9 +9,9 @@ import streamlit as st
 from spacy import displacy
 from spacy.language import Language
 
-from ner_utils import (NlpModel, AiiNerHttpModel,AiiNerRuleHttpModel, doccano2spacy, get_metrics_report,
-                       random_color, span2seq)
-
+from ner_utils import (
+    AiiNerHttpModel, AiiNerRuleHttpModel, NlpModel, doccano2spacy,
+    get_confusion_matrix, get_metrics_report, random_color, span2seq)
 
 MODEL_DICT = {
     'AiiNerHttpModel': AiiNerHttpModel,
@@ -289,6 +289,9 @@ def ner_plus(nlp):
 
         if not from_text_input:
             st.subheader("Metrics Report:")
+            st.subheader("confusion matrix:")
+            df_confusion_matrix = get_confusion_matrix(y_true, y_pred)
+            st.dataframe(df_confusion_matrix)
             metrics_report = get_metrics_report(y_true, y_pred)
             for k, v in metrics_report.items():
                 st.subheader(k)
