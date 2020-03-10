@@ -156,7 +156,7 @@ def spacy_pipeline(nlp):
         st.json(nlp.meta)
 
 
-def ner_plus(nlp):
+def ner_eval(nlp):
     def row_2_html(row):
         return displacy.render(row, **SETTINGS).replace("\n\n", "\n")
 
@@ -370,10 +370,10 @@ model_type = st.sidebar.selectbox("Model Type", ['SpaCy', 'HTTP'])
 
 if model_type == 'SpaCy':
     nlp = load_spacy(nlp)
-    usage_options = ['spacy_pipeline', 'ner_plus']
+    usage_options = ['spacy_pipeline', 'ner_eval']
 elif model_type == 'HTTP':
     nlp = load_http(nlp)
-    usage_options = ['ner_plus']
+    usage_options = ['ner_eval']
 else:
     st.markdown("""
         # You need Select one Model Type
@@ -384,8 +384,8 @@ usage = st.sidebar.selectbox("Usage", usage_options)
 if nlp is not None:
     if usage == 'spacy_pipeline':
         spacy_pipeline(nlp)
-    elif usage == 'ner_plus':
-        ner_plus(nlp)
+    elif usage == 'ner_eval':
+        ner_eval(nlp)
     else:
         st.markdown("""
         # You need Select one Usage

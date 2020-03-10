@@ -150,32 +150,56 @@ def flat_list(l):
         l_.extend(x)
     return l_
 
-def align_label_sequence(y_true,y_pred):
+
+def get_non_completed_entity(label_sequence):
+    found = re.findall('[BSU]\-([^,]+)', ','.join(label_sequence))
+    return "O" if not found else found[0]
+
+
+def align_label_sequence(y_true, y_pred):
     '''
+    FIFO strategy for partial overlap!
     >>> y_true = ['O', 'B-LOC', 'I-LOC', 'O', 'O', 'O', 'O']
     >>> y_pred = ['O', 'O', 'O', 'O', 'B-PER', 'I-PER', 'O']
     >>> align_label_sequence(y_true,y_pred)
     (['O', 'LOC', 'O', 'O', 'O'],['O', 'O', 'O', 'PER' 'O'])
     '''
-    i,j= 0,0
-    y_true_,y_pred_ = [],[]
-    while i<len(y_true):
-        if y_true[i].startswith('B'):
+    i = 0
+    y_true_, y_pred_ = [], []
+    while i < len(y_true):
+        if re.match('[BSUILME]', y_true[i]):
             tmp_label = y_true[i].split('-')[1]
             span_start = i
-            while not y_true[i] in ['B','O']:
+            i += 1
+            while i < len(y_true) and not re.match('[BSUO]', y_true[i]):
                 i += 1
-                j += 1
             y_true_.append(tmp_label)
-            y_pred_.append()
-        elif y_pred[j].startswith('B'):
+            y_pred_.append(get_non_completed_entity(y_pred[span_start:i]))
+        elif re.match('[BSUILME]', y_pred[i]):
+            tmp_label = y_pred[i].split('-')[1]
+            span_start = i
+            i += 1
+            while i < len(y_true) and not re.match('[BSUO]', y_pred[i]):
+                i += 1
+            y_pred_.append(tmp_label)
+            y_true_.append(get_non_completed_entity(y_true[span_start:i]))
+        else:
+            y_true_.append(y_true[i])
+            y_pred_.append(y_pred[i])
+            i += 1
+    # if re.search('I\-',','.join(y_true_+y_pred_)):
+    #     print(y_true, y_pred)
+    return y_true_, y_pred_
+
 
 def get_confusion_matrix(y_true, y_pred):
-    flat_y_true = flat_list(y_true)
-    flat_y_pred = flat_list(y_pred)
+    aligned_y_true, aligned_y_pred = zip(*[
+        align_label_sequence(x, y) for x, y in zip(y_true, y_pred)])
+    flat_y_true, flat_y_pred = flat_list(
+        aligned_y_true), flat_list(aligned_y_pred)
     labels = list(set(flat_y_true) | set(flat_y_pred))
     labels.sort()
-    cm = confusion_matrix(flat_y_true, flat_y_pred, labels=list(labels))
+    cm = confusion_matrix(flat_y_true, flat_y_pred, labels=labels)
     return pd.DataFrame(cm, index=labels, columns=labels)
 
 
